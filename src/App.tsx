@@ -3,6 +3,15 @@ import { useMemo, useState } from "react";
 
 type PrintType = "bw" | "colour";
 
+const SUPABASE_URL =
+  "https://uurjgzqmiwxqkwyvkheu.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY =
+  "sb_publishable_P8G0y_BaN0St_Pltew6rA_HkJhHfED";
+
+const UPLOAD_URL =
+  `${SUPABASE_URL}/functions/v1/storage-upload`;
+
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -19,9 +28,10 @@ export default function App() {
   const [pages, setPages] = useState("1");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [uploadedPath, setUploadedPath] = useState("");
 
-  const pageCount = Math.max(1, Number(pages) || 1);
-  const copyCount = Math.max(1, Number(copies) || 1);
+  const pageCount = Math.min(500, Math.max(1, Number(pages) || 1));
+  const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
 
   const rate =
     paper === "A4"
@@ -34,25 +44,33 @@ export default function App() {
   );
 
   function choose(f: File | null) {
-    if (!f) return;
+    setMessage("");
+    setUploadedPath("");
+
+    if (!f) {
+      setFile(null);
+      return;
+    }
 
     if (!["application/pdf", "image/jpeg", "image/png"].includes(f.type)) {
+      setFile(null);
       setMessage("PDF, JPG, PNG files only.");
       return;
     }
 
     if (f.size > 20 * 1024 * 1024) {
+      setFile(null);
       setMessage("File size must be 20 MB or less.");
       return;
     }
 
     setFile(f);
-    setMessage("");
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setMessage("");
+    setUploadedPath("");
 
     if (!file) {
       setMessage("Please choose a PDF or image.");
@@ -62,8 +80,30 @@ export default function App() {
     setBusy(true);
 
     try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(UPLOAD_URL, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+        },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "File upload failed.");
+      }
+
+      setUploadedPath(result.path);
+      setMessage("File uploaded successfully! Print settings are ready.");
+    } catch (error) {
       setMessage(
-        "Your print settings are ready. Online ordering and payment are not activated yet."
+        error instanceof Error
+          ? error.message
+          : "Upload failed. Please try again."
       );
     } finally {
       setBusy(false);
@@ -189,11 +229,21 @@ export default function App() {
           </div>
 
           <button disabled={busy}>
-            {busy ? "Please wait…" : "Continue →"}
+            {busy ? "Uploading…" : "Continue →"}
           </button>
         </section>
 
         {message && <div className="notice">{message}</div>}
+
+        {uploadedPath && (
+          <div className="notice">
+            <strong>Uploaded file path:</strong>
+            <p>{uploadedPath}</p>
+            <small>
+              Your file is stored temporarily in the print-documents bucket.
+            </small>
+          </div>
+        )}
       </form>
 
       <footer>
@@ -202,7 +252,7 @@ export default function App() {
       </footer>
 
       <div className="setup">
-        Online ordering and payment are not activated yet.
+        File upload is activated. Order, payment and printing are not activated yet.
       </div>
     </main>
   );
