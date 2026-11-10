@@ -7,7 +7,7 @@ const SUPABASE_URL =
   "https://uurjgzqmiwxqkwyvkheu.supabase.co";
 
 const SUPABASE_PUBLISHABLE_KEY =
-  "PASTE_YOUR_NEW_PUBLISHABLE_KEY_HERE";
+  "sb_publishable_P8G0y_BaN0StH_Pltew6rA_HkJhHfED";
 
 const UPLOAD_URL =
   `${SUPABASE_URL}/functions/v1/storage-upload`;
