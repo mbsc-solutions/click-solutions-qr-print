@@ -7,7 +7,7 @@ const SUPABASE_URL =
   "https://uurjgzqmiwxqkwyvkheu.supabase.co";
 
 const SUPABASE_PUBLISHABLE_KEY =
-  "sb_publishable_P8G0y_BaN0St_Pltew6rA_HkJhHfED";
+  "PASTE_YOUR_NEW_PUBLISHABLE_KEY_HERE";
 
 const UPLOAD_URL =
   `${SUPABASE_URL}/functions/v1/storage-upload`;
@@ -74,6 +74,14 @@ export default function App() {
 
     if (!file) {
       setMessage("Please choose a PDF or image.");
+      return;
+    }
+
+    if (
+      SUPABASE_PUBLISHABLE_KEY ===
+      "PASTE_YOUR_NEW_PUBLISHABLE_KEY_HERE"
+    ) {
+      setMessage("Please add your Supabase Publishable Key.");
       return;
     }
 
@@ -240,7 +248,7 @@ export default function App() {
             <strong>Uploaded file path:</strong>
             <p>{uploadedPath}</p>
             <small>
-              Your file is stored temporarily in the print-documents bucket.
+              Your file is stored in the private print-documents bucket.
             </small>
           </div>
         )}
