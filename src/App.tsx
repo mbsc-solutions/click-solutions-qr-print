@@ -36,11 +36,12 @@ export default function App() {
   const [pdfDocument, setPdfDocument] =
     useState<PDFDocumentProxy | null>(null);
 
+  const [selectedPages, setSelectedPages] = useState<number[]>([1]);
+
   const [paper, setPaper] = useState<PaperSize>("A4");
   const [type, setType] = useState<PrintType>("bw");
   const [side, setSide] = useState<PrintSide>("single");
   const [copies, setCopies] = useState("1");
-  const [pages, setPages] = useState("1");
 
   const [busy, setBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -49,7 +50,7 @@ export default function App() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const pageCount = Math.min(500, Math.max(1, Number(pages) || 1));
+  const pageCount = selectedPages.length;
   const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
 
   const rate =
@@ -105,7 +106,6 @@ export default function App() {
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        // Fixed TypeScript RenderParameters error
         renderTask = page.render({
           canvasContext: context,
           viewport,
@@ -127,12 +127,40 @@ export default function App() {
     };
   }, [pdfDocument]);
 
-  // File selection and automatic PDF page count
+  // Select or deselect individual pages
+  function togglePage(pageNumber: number) {
+    setSelectedPages((current) => {
+      if (current.includes(pageNumber)) {
+        return current.filter((p) => p !== pageNumber);
+      }
+
+      return [...current, pageNumber].sort((a, b) => a - b);
+    });
+  }
+
+  // Select all PDF pages
+  function selectAllPages() {
+    if (pdfDocument) {
+      setSelectedPages(
+        Array.from(
+          { length: pdfDocument.numPages },
+          (_, index) => index + 1
+        )
+      );
+    }
+  }
+
+  // Deselect all PDF pages
+  function clearAllPages() {
+    setSelectedPages([]);
+  }
+
+  // Select and read file
   async function choose(f: File | null) {
     setMessage("");
     setOrderNumber("");
     setPdfDocument(null);
-    setPages("1");
+    setSelectedPages([]);
 
     if (!f) {
       setFile(null);
@@ -178,19 +206,24 @@ export default function App() {
         }
 
         setPdfDocument(pdf);
-        setPages(String(pdf.numPages));
+
+        setSelectedPages(
+          Array.from(
+            { length: pdf.numPages },
+            (_, index) => index + 1
+          )
+        );
+
         setMessage("PDF loaded successfully.");
       } catch {
         setFile(null);
         setPdfDocument(null);
-        setMessage(
-          "Unable to read this PDF. Please try another PDF."
-        );
+        setMessage("Unable to read this PDF. Please try another PDF.");
       } finally {
         setPreviewLoading(false);
       }
     } else {
-      setPages("1");
+      setSelectedPages([1]);
       setMessage("Image selected successfully.");
     }
   }
@@ -203,6 +236,11 @@ export default function App() {
 
     if (!file) {
       setMessage("Please choose a PDF or image.");
+      return;
+    }
+
+    if (selectedPages.length === 0) {
+      setMessage("Please select at least one page.");
       return;
     }
 
@@ -249,6 +287,7 @@ export default function App() {
           print_side: side,
           copies: copyCount,
           total_pages: pageCount,
+          selected_pages: selectedPages,
           total_amount: total,
         }),
       });
@@ -270,7 +309,7 @@ export default function App() {
       setMessage("Order saved successfully!");
       setFile(null);
       setPdfDocument(null);
-      setPages("1");
+      setSelectedPages([1]);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -329,69 +368,154 @@ export default function App() {
         </section>
 
         {file && (
-          <section className="panel">
-            <h2>02 <span>Document preview</span></h2>
+          <>
+            <section className="panel">
+              <h2>02 <span>Document preview</span></h2>
 
-            {previewLoading && (
-              <p>Reading document pages...</p>
-            )}
+              {previewLoading && (
+                <p>Reading document pages...</p>
+              )}
 
-            {pdfDocument && (
-              <>
+              {pdfDocument && (
+                <>
+                  <div
+                    style={{
+                      background: "#f1f1f1",
+                      padding: "12px",
+                      borderRadius: "10px",
+                      textAlign: "center",
+                      overflow: "auto",
+                    }}
+                  >
+                    <canvas
+                      ref={canvasRef}
+                      style={{
+                        maxWidth: "100%",
+                        height: "auto",
+                        background: "white",
+                      }}
+                    />
+                  </div>
+
+                  <p className="hint">
+                    Preview: Page 1 of {pdfDocument.numPages}
+                  </p>
+                </>
+              )}
+
+              {imagePreviewUrl && (
                 <div
                   style={{
                     background: "#f1f1f1",
                     padding: "12px",
                     borderRadius: "10px",
                     textAlign: "center",
-                    overflow: "auto",
                   }}
                 >
-                  <canvas
-                    ref={canvasRef}
+                  <img
+                    src={imagePreviewUrl}
+                    alt="Uploaded document preview"
                     style={{
                       maxWidth: "100%",
-                      height: "auto",
-                      background: "white",
+                      maxHeight: "450px",
+                      objectFit: "contain",
                     }}
                   />
                 </div>
+              )}
+
+              <p className="hint">
+                Total pages in document:{" "}
+                {pdfDocument?.numPages || 1}
+              </p>
+            </section>
+
+            {pdfDocument && (
+              <section className="panel">
+                <h2>03 <span>Select pages to print</span></h2>
 
                 <p className="hint">
-                  Preview: Page 1 of {pdfDocument.numPages}
+                  Select only the pages you need. Uncheck pages you do not want.
                 </p>
-              </>
-            )}
 
-            {imagePreviewUrl && (
-              <div
-                style={{
-                  background: "#f1f1f1",
-                  padding: "12px",
-                  borderRadius: "10px",
-                  textAlign: "center",
-                }}
-              >
-                <img
-                  src={imagePreviewUrl}
-                  alt="Uploaded document preview"
+                <div
                   style={{
-                    maxWidth: "100%",
-                    maxHeight: "450px",
-                    objectFit: "contain",
+                    display: "flex",
+                    gap: "10px",
+                    flexWrap: "wrap",
+                    marginBottom: "16px",
                   }}
-                />
-              </div>
-            )}
+                >
+                  <button
+                    type="button"
+                    onClick={selectAllPages}
+                  >
+                    Select all
+                  </button>
 
-            <p className="hint">
-              Total document pages detected: <strong>{pageCount}</strong>
-            </p>
-          </section>
+                  <button
+                    type="button"
+                    onClick={clearAllPages}
+                  >
+                    Clear all
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(auto-fit, minmax(100px, 1fr))",
+                    gap: "10px",
+                  }}
+                >
+                  {Array.from(
+                    { length: pdfDocument.numPages },
+                    (_, index) => index + 1
+                  ).map((pageNumber) => (
+                    <label
+                      key={pageNumber}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "12px",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        background: selectedPages.includes(pageNumber)
+                          ? "#fff3e8"
+                          : "#ffffff",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPages.includes(pageNumber)}
+                        onChange={() => togglePage(pageNumber)}
+                      />
+                      Page {pageNumber}
+                    </label>
+                  ))}
+                </div>
+
+                <p className="hint">
+                  Selected pages:{" "}
+                  <strong>{selectedPages.length}</strong>
+                </p>
+
+                <p className="hint">
+                  Page numbers:{" "}
+                  {selectedPages.length
+                    ? selectedPages.join(", ")
+                    : "No pages selected"}
+                </p>
+              </section>
+            )}
+          </>
         )}
 
         <section className="panel">
-          <h2>03 <span>Print settings</span></h2>
+          <h2>04 <span>Print settings</span></h2>
 
           <div className="grid">
             <label>
@@ -453,8 +577,8 @@ export default function App() {
           </div>
 
           <p className="hint">
-            Pages are detected automatically from PDF.
-            Images count as 1 page.
+            PDF pages are selected individually.
+            JPG/PNG images count as 1 page.
           </p>
 
           <p className="hint">
@@ -465,11 +589,11 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <h2>04 <span>Order summary</span></h2>
+          <h2>05 <span>Order summary</span></h2>
 
           <div className="grid">
             <div>
-              <small>Document pages</small>
+              <small>Selected pages</small>
               <strong>{pageCount}</strong>
             </div>
 
@@ -504,6 +628,10 @@ export default function App() {
           </div>
 
           <p className="hint">
+            Selected page numbers: {selectedPages.join(", ") || "None"}
+          </p>
+
+          <p className="hint">
             Total chargeable sides:{" "}
             {pageCount * copyCount * (side === "double" ? 2 : 1)}
           </p>
@@ -518,7 +646,12 @@ export default function App() {
 
           <button
             type="submit"
-            disabled={busy || previewLoading || !file}
+            disabled={
+              busy ||
+              previewLoading ||
+              !file ||
+              selectedPages.length === 0
+            }
           >
             {busy ? "Please wait…" : "Place Order →"}
           </button>
