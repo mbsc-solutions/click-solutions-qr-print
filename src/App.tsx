@@ -9,10 +9,13 @@ const SUPABASE_URL =
   "https://uurjgzqmiwxqkwyvkheu.supabase.co";
 
 const SUPABASE_PUBLISHABLE_KEY =
-  "sb_publishable_P8G0y_BaN0StH_Pltew6rA_HkJhHfED";
+  "sb_publishable_P8G0y_BaN0St_Pltew6rA_HkJhHfED";
 
 const UPLOAD_URL =
   `${SUPABASE_URL}/functions/v1/storage-upload`;
+
+const ORDER_URL =
+  `${SUPABASE_URL}/functions/v1/create-print-order`;
 
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -30,17 +33,10 @@ export default function App() {
   const [pages, setPages] = useState("1");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [uploadedPath, setUploadedPath] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
 
-  const pageCount = Math.min(
-    500,
-    Math.max(1, Number(pages) || 1)
-  );
-
-  const copyCount = Math.min(
-    100,
-    Math.max(1, Number(copies) || 1)
-  );
+  const pageCount = Math.min(500, Math.max(1, Number(pages) || 1));
+  const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
 
   const rate =
     paper === "A4"
@@ -48,17 +44,13 @@ export default function App() {
       : type === "bw" ? 6 : 20;
 
   const total = useMemo(
-    () =>
-      pageCount *
-      copyCount *
-      rate *
-      (side === "double" ? 2 : 1),
+    () => pageCount * copyCount * rate * (side === "double" ? 2 : 1),
     [pageCount, copyCount, rate, side]
   );
 
   function choose(f: File | null) {
     setMessage("");
-    setUploadedPath("");
+    setOrderNumber("");
 
     if (!f) {
       setFile(null);
@@ -89,9 +81,8 @@ export default function App() {
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-
     setMessage("");
-    setUploadedPath("");
+    setOrderNumber("");
 
     if (!file) {
       setMessage("Please choose a PDF or image.");
@@ -101,10 +92,11 @@ export default function App() {
     setBusy(true);
 
     try {
+      // Step 1: Upload file
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch(UPLOAD_URL, {
+      const uploadResponse = await fetch(UPLOAD_URL, {
         method: "POST",
         headers: {
           apikey: SUPABASE_PUBLISHABLE_KEY,
@@ -112,23 +104,54 @@ export default function App() {
         body: formData,
       });
 
-      const result = await response.json();
+      const uploadResult = await uploadResponse.json();
 
-      if (!response.ok || !result.success) {
+      if (!uploadResponse.ok || !uploadResult.success) {
         throw new Error(
-          result.error || "File upload failed."
+          uploadResult.error || "File upload failed."
         );
       }
 
-      setUploadedPath(result.path);
-      setMessage(
-        "File uploaded successfully! Print settings are ready."
+      // Step 2: Save order details
+      const orderResponse = await fetch(ORDER_URL, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          file_path: uploadResult.path,
+          file_name: file.name,
+          paper_size: paper,
+          print_type: type,
+          print_side: side,
+          copies: copyCount,
+          total_pages: pageCount,
+          total_amount: total,
+        }),
+      });
+
+      const orderResult = await orderResponse.json();
+
+      if (!orderResponse.ok || !orderResult.success) {
+        throw new Error(
+          orderResult.error || "Order could not be saved."
+        );
+      }
+
+      setOrderNumber(
+        orderResult.order?.order_number ||
+        orderResult.order?.id ||
+        "Saved"
       );
+
+      setMessage("Order saved successfully!");
+      setFile(null);
     } catch (error) {
       setMessage(
         error instanceof Error
           ? error.message
-          : "Upload failed. Please try again."
+          : "Something went wrong. Please try again."
       );
     } finally {
       setBusy(false);
@@ -141,52 +164,33 @@ export default function App() {
         <div className="logo">
           CLICK <span>SOLUTIONS</span>
         </div>
-
-        <div className="sub">
-          QR PRINT & XEROX
-        </div>
-
+        <div className="sub">QR PRINT & XEROX</div>
         <p>UPLOAD · PRINT · PAY · COLLECT</p>
       </header>
 
       <section className="hero">
         <div>
           <small>ONLINE PRINT ORDER</small>
-
           <h1>
             Your documents,
             <br />
             <em>printed with ease.</em>
           </h1>
-
           <p>
             Upload your file, choose print settings and pay at our shop.
             Collect your ready prints.
           </p>
         </div>
-
         <div className="heroIcon">▤</div>
       </section>
 
       <form onSubmit={submit}>
         <section className="panel">
-          <h2>
-            01 <span>Upload document</span>
-          </h2>
-
+          <h2>01 <span>Upload document</span></h2>
           <label className="upload">
             <b>＋</b>
-
-            <strong>
-              {file
-                ? file.name
-                : "Choose PDF / JPG / PNG"}
-            </strong>
-
-            <small>
-              Maximum file size: 20 MB
-            </small>
-
+            <strong>{file ? file.name : "Choose PDF / JPG / PNG"}</strong>
+            <small>Maximum file size: 20 MB</small>
             <input
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
@@ -198,14 +202,10 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <h2>
-            02 <span>Print settings</span>
-          </h2>
-
+          <h2>02 <span>Print settings</span></h2>
           <div className="grid">
             <label>
               Paper size
-
               <select
                 value={paper}
                 onChange={(e) =>
@@ -219,7 +219,6 @@ export default function App() {
 
             <label>
               Print colour
-
               <select
                 value={type}
                 onChange={(e) =>
@@ -233,7 +232,6 @@ export default function App() {
 
             <label>
               Print sides
-
               <select
                 value={side}
                 onChange={(e) =>
@@ -247,21 +245,17 @@ export default function App() {
 
             <label>
               Pages in document
-
               <input
                 type="number"
                 min="1"
                 max="500"
                 value={pages}
-                onChange={(e) =>
-                  setPages(e.target.value)
-                }
+                onChange={(e) => setPages(e.target.value)}
                 onBlur={() => {
                   const n = Math.min(
                     500,
                     Math.max(1, Number(pages) || 1)
                   );
-
                   setPages(String(n));
                 }}
               />
@@ -269,21 +263,17 @@ export default function App() {
 
             <label>
               Number of copies
-
               <input
                 type="number"
                 min="1"
                 max="100"
                 value={copies}
-                onChange={(e) =>
-                  setCopies(e.target.value)
-                }
+                onChange={(e) => setCopies(e.target.value)}
                 onBlur={() => {
                   const n = Math.min(
                     100,
                     Math.max(1, Number(copies) || 1)
                   );
-
                   setCopies(String(n));
                 }}
               />
@@ -300,50 +290,33 @@ export default function App() {
         <section className="total">
           <div>
             <small>ESTIMATED TOTAL</small>
-
             <strong>{money(total)}</strong>
-
-            <small>
-              Shop pickup · Payment at shop
-            </small>
+            <small>Shop pickup · Payment at shop</small>
           </div>
-
           <button type="submit" disabled={busy}>
-            {busy ? "Uploading…" : "Continue →"}
+            {busy ? "Please wait…" : "Place Order →"}
           </button>
         </section>
 
-        {message && (
+        {message && <div className="notice">{message}</div>}
+
+        {orderNumber && (
           <div className="notice">
-            {message}
-          </div>
-        )}
-
-        {uploadedPath && (
-          <div className="notice">
-            <strong>Uploaded file path:</strong>
-
-            <p>{uploadedPath}</p>
-
-            <small>
-              Your file is stored in the private
-              print-documents bucket.
-            </small>
+            <strong>Your Order Number:</strong>
+            <p>{orderNumber}</p>
+            <small>Your order details have been saved.</small>
           </div>
         )}
       </form>
 
       <footer>
         CLICK SOLUTIONS QR PRINT & XEROX
-
-        <span>
-          Need help? Contact the shop.
-        </span>
+        <span>Need help? Contact the shop.</span>
       </footer>
 
       <div className="setup">
-        File upload is activated. Order, payment and printing
-        are not activated yet.
+        File upload and order saving are activated.
+        Payment and automatic printing are not activated yet.
       </div>
     </main>
   );
