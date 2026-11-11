@@ -31,12 +31,104 @@ const money = (n: number) =>
     maximumFractionDigits: 2,
   }).format(n);
 
+// Individual PDF page preview component
+function PdfPagePreview({
+  pdf,
+  pageNumber,
+}: {
+  pdf: PDFDocumentProxy;
+  pageNumber: number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let renderTask: any = null;
+
+    async function renderPage() {
+      try {
+        const page = await pdf.getPage(pageNumber);
+
+        if (cancelled) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext("2d");
+        if (!context) return;
+
+        const viewport = page.getViewport({ scale: 0.8 });
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        renderTask = page.render({
+          canvasContext: context,
+          viewport,
+        });
+
+        await renderTask.promise;
+
+        if (!cancelled) {
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setError(true);
+          setLoading(false);
+        }
+      }
+    }
+
+    renderPage();
+
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+    };
+  }, [pdf, pageNumber]);
+
+  return (
+    <div
+      style={{
+        background: "#f1f1f1",
+        padding: "12px",
+        borderRadius: "10px",
+        textAlign: "center",
+        marginBottom: "12px",
+      }}
+    >
+      <strong style={{ display: "block", marginBottom: "10px" }}>
+        Page {pageNumber}
+      </strong>
+
+      {loading && <p>Loading page...</p>}
+
+      {error && <p>Preview unavailable for this page.</p>}
+
+      <canvas
+        ref={canvasRef}
+        style={{
+          display: error ? "none" : "block",
+          maxWidth: "100%",
+          height: "auto",
+          margin: "0 auto",
+          background: "white",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+        }}
+      />
+    </div>
+  );
+}
+
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [pdfDocument, setPdfDocument] =
     useState<PDFDocumentProxy | null>(null);
 
-  const [selectedPages, setSelectedPages] = useState<number[]>([1]);
+  const [selectedPages, setSelectedPages] = useState<number[]>([]);
 
   const [paper, setPaper] = useState<PaperSize>("A4");
   const [type, setType] = useState<PrintType>("bw");
@@ -47,8 +139,6 @@ export default function App() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const pageCount = selectedPages.length;
   const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
@@ -82,52 +172,6 @@ export default function App() {
     };
   }, [imagePreviewUrl]);
 
-  // PDF first page preview
-  useEffect(() => {
-    if (!pdfDocument || !canvasRef.current) return;
-
-    let cancelled = false;
-    let renderTask: { cancel: () => void } | null = null;
-
-    async function renderPreview() {
-      try {
-        const page = await pdfDocument!.getPage(1);
-
-        if (cancelled) return;
-
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const context = canvas.getContext("2d");
-        if (!context) return;
-
-        const viewport = page.getViewport({ scale: 1.3 });
-
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-
-        renderTask = page.render({
-          canvasContext: context,
-          viewport,
-        });
-
-        await (renderTask as any).promise;
-      } catch {
-        if (!cancelled) {
-          setMessage("PDF preview could not be displayed.");
-        }
-      }
-    }
-
-    renderPreview();
-
-    return () => {
-      cancelled = true;
-      renderTask?.cancel();
-    };
-  }, [pdfDocument]);
-
-  // Select or deselect individual pages
   function togglePage(pageNumber: number) {
     setSelectedPages((current) => {
       if (current.includes(pageNumber)) {
@@ -138,7 +182,6 @@ export default function App() {
     });
   }
 
-  // Select all PDF pages
   function selectAllPages() {
     if (pdfDocument) {
       setSelectedPages(
@@ -147,15 +190,15 @@ export default function App() {
           (_, index) => index + 1
         )
       );
+    } else if (file && file.type.startsWith("image/")) {
+      setSelectedPages([1]);
     }
   }
 
-  // Deselect all PDF pages
   function clearAllPages() {
     setSelectedPages([]);
   }
 
-  // Select and read file
   async function choose(f: File | null) {
     setMessage("");
     setOrderNumber("");
@@ -228,7 +271,6 @@ export default function App() {
     }
   }
 
-  // Upload file and save order
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("");
@@ -252,7 +294,6 @@ export default function App() {
     setBusy(true);
 
     try {
-      // Step 1: Upload document
       const formData = new FormData();
       formData.append("file", file);
 
@@ -272,7 +313,6 @@ export default function App() {
         );
       }
 
-      // Step 2: Save order details
       const orderResponse = await fetch(ORDER_URL, {
         method: "POST",
         headers: {
@@ -307,9 +347,10 @@ export default function App() {
       );
 
       setMessage("Order saved successfully!");
+
       setFile(null);
       setPdfDocument(null);
-      setSelectedPages([1]);
+      setSelectedPages([]);
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -378,144 +419,115 @@ export default function App() {
 
               {pdfDocument && (
                 <>
+                  <p className="hint">
+                    Total pages in PDF: {pdfDocument.numPages}
+                  </p>
+
+                  {Array.from(
+                    { length: pdfDocument.numPages },
+                    (_, index) => index + 1
+                  ).map((pageNumber) => (
+                    <div key={pageNumber}>
+                      <PdfPagePreview
+                        pdf={pdfDocument}
+                        pageNumber={pageNumber}
+                      />
+
+                      <label
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          padding: "12px",
+                          marginBottom: "16px",
+                          border: "1px solid #ddd",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          background: selectedPages.includes(pageNumber)
+                            ? "#fff3e8"
+                            : "#ffffff",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedPages.includes(pageNumber)}
+                          onChange={() => togglePage(pageNumber)}
+                        />
+                        Print Page {pageNumber}
+                      </label>
+                    </div>
+                  ))}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <button type="button" onClick={selectAllPages}>
+                      Select all pages
+                    </button>
+
+                    <button type="button" onClick={clearAllPages}>
+                      Clear all pages
+                    </button>
+                  </div>
+
+                  <p className="hint">
+                    Selected pages: {selectedPages.length}
+                  </p>
+
+                  <p className="hint">
+                    Page numbers:{" "}
+                    {selectedPages.join(", ") || "None selected"}
+                  </p>
+                </>
+              )}
+
+              {imagePreviewUrl && (
+                <>
                   <div
                     style={{
                       background: "#f1f1f1",
                       padding: "12px",
                       borderRadius: "10px",
                       textAlign: "center",
-                      overflow: "auto",
                     }}
                   >
-                    <canvas
-                      ref={canvasRef}
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Uploaded document preview"
                       style={{
                         maxWidth: "100%",
-                        height: "auto",
-                        background: "white",
+                        maxHeight: "450px",
+                        objectFit: "contain",
                       }}
                     />
                   </div>
 
-                  <p className="hint">
-                    Preview: Page 1 of {pdfDocument.numPages}
-                  </p>
+                  <label
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      padding: "12px",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedPages.includes(1)}
+                      onChange={() => togglePage(1)}
+                    />
+                    Print Image
+                  </label>
                 </>
               )}
-
-              {imagePreviewUrl && (
-                <div
-                  style={{
-                    background: "#f1f1f1",
-                    padding: "12px",
-                    borderRadius: "10px",
-                    textAlign: "center",
-                  }}
-                >
-                  <img
-                    src={imagePreviewUrl}
-                    alt="Uploaded document preview"
-                    style={{
-                      maxWidth: "100%",
-                      maxHeight: "450px",
-                      objectFit: "contain",
-                    }}
-                  />
-                </div>
-              )}
-
-              <p className="hint">
-                Total pages in document:{" "}
-                {pdfDocument?.numPages || 1}
-              </p>
             </section>
-
-            {pdfDocument && (
-              <section className="panel">
-                <h2>03 <span>Select pages to print</span></h2>
-
-                <p className="hint">
-                  Select only the pages you need. Uncheck pages you do not want.
-                </p>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "10px",
-                    flexWrap: "wrap",
-                    marginBottom: "16px",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={selectAllPages}
-                  >
-                    Select all
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={clearAllPages}
-                  >
-                    Clear all
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(100px, 1fr))",
-                    gap: "10px",
-                  }}
-                >
-                  {Array.from(
-                    { length: pdfDocument.numPages },
-                    (_, index) => index + 1
-                  ).map((pageNumber) => (
-                    <label
-                      key={pageNumber}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        padding: "12px",
-                        border: "1px solid #ddd",
-                        borderRadius: "8px",
-                        cursor: "pointer",
-                        background: selectedPages.includes(pageNumber)
-                          ? "#fff3e8"
-                          : "#ffffff",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedPages.includes(pageNumber)}
-                        onChange={() => togglePage(pageNumber)}
-                      />
-                      Page {pageNumber}
-                    </label>
-                  ))}
-                </div>
-
-                <p className="hint">
-                  Selected pages:{" "}
-                  <strong>{selectedPages.length}</strong>
-                </p>
-
-                <p className="hint">
-                  Page numbers:{" "}
-                  {selectedPages.length
-                    ? selectedPages.join(", ")
-                    : "No pages selected"}
-                </p>
-              </section>
-            )}
           </>
         )}
 
         <section className="panel">
-          <h2>04 <span>Print settings</span></h2>
+          <h2>03 <span>Print settings</span></h2>
 
           <div className="grid">
             <label>
@@ -577,11 +589,6 @@ export default function App() {
           </div>
 
           <p className="hint">
-            PDF pages are selected individually.
-            JPG/PNG images count as 1 page.
-          </p>
-
-          <p className="hint">
             A4 B&W ₹3 per side · A4 Colour ₹10 per side.
             A3 B&W ₹6 per side · A3 Colour ₹20 per side.
             Both sides are charged for two printed sides.
@@ -589,7 +596,7 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <h2>05 <span>Order summary</span></h2>
+          <h2>04 <span>Order summary</span></h2>
 
           <div className="grid">
             <div>
@@ -628,7 +635,8 @@ export default function App() {
           </div>
 
           <p className="hint">
-            Selected page numbers: {selectedPages.join(", ") || "None"}
+            Selected page numbers:{" "}
+            {selectedPages.join(", ") || "None"}
           </p>
 
           <p className="hint">
