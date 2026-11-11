@@ -81,7 +81,7 @@ export default function App() {
     };
   }, [imagePreviewUrl]);
 
-  // Render first PDF page in preview
+  // PDF first page preview
   useEffect(() => {
     if (!pdfDocument || !canvasRef.current) return;
 
@@ -105,8 +105,8 @@ export default function App() {
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
+        // Fixed TypeScript RenderParameters error
         renderTask = page.render({
-          canvas,
           canvasContext: context,
           viewport,
         });
@@ -127,7 +127,7 @@ export default function App() {
     };
   }, [pdfDocument]);
 
-  // Select and read file
+  // File selection and automatic PDF page count
   async function choose(f: File | null) {
     setMessage("");
     setOrderNumber("");
@@ -183,7 +183,9 @@ export default function App() {
       } catch {
         setFile(null);
         setPdfDocument(null);
-        setMessage("Unable to read this PDF. Please try another PDF.");
+        setMessage(
+          "Unable to read this PDF. Please try another PDF."
+        );
       } finally {
         setPreviewLoading(false);
       }
@@ -193,6 +195,7 @@ export default function App() {
     }
   }
 
+  // Upload file and save order
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("");
@@ -353,6 +356,7 @@ export default function App() {
                     }}
                   />
                 </div>
+
                 <p className="hint">
                   Preview: Page 1 of {pdfDocument.numPages}
                 </p>
@@ -468,26 +472,31 @@ export default function App() {
               <small>Document pages</small>
               <strong>{pageCount}</strong>
             </div>
+
             <div>
               <small>Copies</small>
               <strong>{copyCount}</strong>
             </div>
+
             <div>
               <small>Paper</small>
               <strong>{paper}</strong>
             </div>
+
             <div>
               <small>Print type</small>
               <strong>
                 {type === "bw" ? "Black & White" : "Colour"}
               </strong>
             </div>
+
             <div>
               <small>Print sides</small>
               <strong>
                 {side === "single" ? "Single side" : "Both sides"}
               </strong>
             </div>
+
             <div>
               <small>Rate per side</small>
               <strong>{money(rate)}</strong>
@@ -495,7 +504,8 @@ export default function App() {
           </div>
 
           <p className="hint">
-            Total chargeable sides: {pageCount * copyCount * (side === "double" ? 2 : 1)}
+            Total chargeable sides:{" "}
+            {pageCount * copyCount * (side === "double" ? 2 : 1)}
           </p>
         </section>
 
