@@ -6,6 +6,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 type PrintType = "bw" | "colour";
 type PaperSize = "A4" | "A3";
 type PrintSide = "single" | "double";
+type PageMode = "all" | "custom";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -31,7 +32,7 @@ const money = (n: number) =>
     maximumFractionDigits: 2,
   }).format(n);
 
-// Individual PDF page preview component
+// PDF individual page preview
 function PdfPagePreview({
   pdf,
   pageNumber,
@@ -71,9 +72,7 @@ function PdfPagePreview({
 
         await renderTask.promise;
 
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       } catch {
         if (!cancelled) {
           setError(true);
@@ -105,7 +104,6 @@ function PdfPagePreview({
       </strong>
 
       {loading && <p>Loading page...</p>}
-
       {error && <p>Preview unavailable for this page.</p>}
 
       <canvas
@@ -128,7 +126,10 @@ export default function App() {
   const [pdfDocument, setPdfDocument] =
     useState<PDFDocumentProxy | null>(null);
 
-  const [selectedPages, setSelectedPages] = useState<number[]>([]);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const [pageMode, setPageMode] = useState<PageMode>("all");
+  const [customRange, setCustomRange] = useState("");
 
   const [paper, setPaper] = useState<PaperSize>("A4");
   const [type, setType] = useState<PrintType>("bw");
@@ -140,8 +141,53 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
 
-  const pageCount = selectedPages.length;
   const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
+
+  // Calculate selected pages from All Pages or Custom Range
+  const selectedPages = useMemo(() => {
+    if (!file) return [];
+
+    // Images have only one printable page
+    if (file.type.startsWith("image/")) {
+      return [1];
+    }
+
+    if (!pdfDocument) return [];
+
+    if (pageMode === "all") {
+      return Array.from(
+        { length: pdfDocument.numPages },
+        (_, index) => index + 1
+      );
+    }
+
+    const value = customRange.trim();
+
+    // Accept one page number or one range such as 1-4
+    const match = value.match(/^(\d+)\s*-\s*(\d+)$/);
+
+    if (!match) return [];
+
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+
+    if (
+      !Number.isInteger(start) ||
+      !Number.isInteger(end) ||
+      start < 1 ||
+      end < start ||
+      end > pdfDocument.numPages
+    ) {
+      return [];
+    }
+
+    return Array.from(
+      { length: end - start + 1 },
+      (_, index) => start + index
+    );
+  }, [file, pdfDocument, pageMode, customRange]);
+
+  const pageCount = selectedPages.length;
 
   const rate =
     paper === "A4"
@@ -172,38 +218,13 @@ export default function App() {
     };
   }, [imagePreviewUrl]);
 
-  function togglePage(pageNumber: number) {
-    setSelectedPages((current) => {
-      if (current.includes(pageNumber)) {
-        return current.filter((p) => p !== pageNumber);
-      }
-
-      return [...current, pageNumber].sort((a, b) => a - b);
-    });
-  }
-
-  function selectAllPages() {
-    if (pdfDocument) {
-      setSelectedPages(
-        Array.from(
-          { length: pdfDocument.numPages },
-          (_, index) => index + 1
-        )
-      );
-    } else if (file && file.type.startsWith("image/")) {
-      setSelectedPages([1]);
-    }
-  }
-
-  function clearAllPages() {
-    setSelectedPages([]);
-  }
-
   async function choose(f: File | null) {
     setMessage("");
     setOrderNumber("");
     setPdfDocument(null);
-    setSelectedPages([]);
+    setPreviewOpen(false);
+    setPageMode("all");
+    setCustomRange("");
 
     if (!f) {
       setFile(null);
@@ -249,14 +270,6 @@ export default function App() {
         }
 
         setPdfDocument(pdf);
-
-        setSelectedPages(
-          Array.from(
-            { length: pdf.numPages },
-            (_, index) => index + 1
-          )
-        );
-
         setMessage("PDF loaded successfully.");
       } catch {
         setFile(null);
@@ -266,7 +279,6 @@ export default function App() {
         setPreviewLoading(false);
       }
     } else {
-      setSelectedPages([1]);
       setMessage("Image selected successfully.");
     }
   }
@@ -281,13 +293,17 @@ export default function App() {
       return;
     }
 
-    if (selectedPages.length === 0) {
-      setMessage("Please select at least one page.");
+    if (previewLoading) {
+      setMessage("Please wait until the preview is ready.");
       return;
     }
 
-    if (previewLoading) {
-      setMessage("Please wait until the preview is ready.");
+    if (selectedPages.length === 0) {
+      setMessage(
+        pageMode === "custom"
+          ? `Please enter a valid page range between 1 and ${pdfDocument?.numPages || 1}. Example: 1-4`
+          : "No printable pages found."
+      );
       return;
     }
 
@@ -350,7 +366,9 @@ export default function App() {
 
       setFile(null);
       setPdfDocument(null);
-      setSelectedPages([]);
+      setPreviewOpen(false);
+      setPageMode("all");
+      setCustomRange("");
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -409,125 +427,190 @@ export default function App() {
         </section>
 
         {file && (
-          <>
-            <section className="panel">
-              <h2>02 <span>Document preview</span></h2>
+          <section className="panel">
+            <h2>02 <span>Document preview</span></h2>
 
-              {previewLoading && (
-                <p>Reading document pages...</p>
-              )}
+            {previewLoading && (
+              <p>Reading document pages...</p>
+            )}
 
-              {pdfDocument && (
-                <>
-                  <p className="hint">
-                    Total pages in PDF: {pdfDocument.numPages}
-                  </p>
+            {pdfDocument && (
+              <>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "12px",
+                    padding: "14px",
+                    border: "1px solid #ddd",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setPreviewOpen(!previewOpen)}
+                >
+                  <div>
+                    <strong>PDF Preview</strong>
+                    <p className="hint" style={{ margin: "5px 0 0" }}>
+                      Total pages: {pdfDocument.numPages}
+                    </p>
+                  </div>
 
-                  {Array.from(
-                    { length: pdfDocument.numPages },
-                    (_, index) => index + 1
-                  ).map((pageNumber) => (
-                    <div key={pageNumber}>
+                  <button
+                    type="button"
+                    aria-label={previewOpen ? "Close preview" : "Open preview"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewOpen(!previewOpen);
+                    }}
+                    style={{
+                      fontSize: "22px",
+                      padding: "5px 12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {previewOpen ? "▲" : "▼"}
+                  </button>
+                </div>
+
+                {previewOpen && (
+                  <div style={{ marginTop: "15px" }}>
+                    {Array.from(
+                      { length: pdfDocument.numPages },
+                      (_, index) => index + 1
+                    ).map((pageNumber) => (
                       <PdfPagePreview
+                        key={pageNumber}
                         pdf={pdfDocument}
                         pageNumber={pageNumber}
                       />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
 
-                      <label
+            {imagePreviewUrl && (
+              <div
+                style={{
+                  background: "#f1f1f1",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  textAlign: "center",
+                }}
+              >
+                <img
+                  src={imagePreviewUrl}
+                  alt="Uploaded document preview"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "450px",
+                    objectFit: "contain",
+                  }}
+                />
+              </div>
+            )}
+          </section>
+        )}
+
+        {file && (
+          <section className="panel">
+            <h2>03 <span>Select printer pages</span></h2>
+
+            {pdfDocument && (
+              <>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "12px",
+                    border: "1px solid #ddd",
+                    borderRadius: "8px",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="pageMode"
+                    checked={pageMode === "all"}
+                    onChange={() => setPageMode("all")}
+                  />
+                  <strong>All Pages</strong>
+                </label>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "12px",
+                    border: "1px solid #ddd",
+                    borderRadius: "8px",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="pageMode"
+                    checked={pageMode === "custom"}
+                    onChange={() => setPageMode("custom")}
+                  />
+                  <strong>Custom Pages</strong>
+                </label>
+
+                {pageMode === "custom" && (
+                  <div style={{ marginTop: "15px" }}>
+                    <label>
+                      Enter page range
+                      <input
+                        type="text"
+                        value={customRange}
+                        onChange={(e) =>
+                          setCustomRange(e.target.value)
+                        }
+                        placeholder="Example: 1-4"
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "10px",
+                          display: "block",
+                          width: "100%",
+                          boxSizing: "border-box",
                           padding: "12px",
-                          marginBottom: "16px",
-                          border: "1px solid #ddd",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          background: selectedPages.includes(pageNumber)
-                            ? "#fff3e8"
-                            : "#ffffff",
+                          marginTop: "8px",
                         }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedPages.includes(pageNumber)}
-                          onChange={() => togglePage(pageNumber)}
-                        />
-                        Print Page {pageNumber}
-                      </label>
-                    </div>
-                  ))}
+                      />
+                    </label>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "10px",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <button type="button" onClick={selectAllPages}>
-                      Select all pages
-                    </button>
+                    <p className="hint">
+                      Example: 1-2, 1-4, 4-8
+                    </p>
 
-                    <button type="button" onClick={clearAllPages}>
-                      Clear all pages
-                    </button>
+                    {customRange.trim() !== "" && pageCount === 0 && (
+                      <p style={{ color: "red" }}>
+                        Invalid range. Enter pages between 1 and {pdfDocument.numPages}.
+                      </p>
+                    )}
+
+                    {pageCount > 0 && (
+                      <p className="hint">
+                        Selected pages: {selectedPages[0]}-{selectedPages[selectedPages.length - 1]}
+                      </p>
+                    )}
                   </div>
+                )}
+              </>
+            )}
 
-                  <p className="hint">
-                    Selected pages: {selectedPages.length}
-                  </p>
+            {imagePreviewUrl && (
+              <p className="hint">Image document: 1 printable page.</p>
+            )}
 
-                  <p className="hint">
-                    Page numbers:{" "}
-                    {selectedPages.join(", ") || "None selected"}
-                  </p>
-                </>
-              )}
-
-              {imagePreviewUrl && (
-                <>
-                  <div
-                    style={{
-                      background: "#f1f1f1",
-                      padding: "12px",
-                      borderRadius: "10px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Uploaded document preview"
-                      style={{
-                        maxWidth: "100%",
-                        maxHeight: "450px",
-                        objectFit: "contain",
-                      }}
-                    />
-                  </div>
-
-                  <label
-                    style={{
-                      display: "flex",
-                      gap: "10px",
-                      padding: "12px",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedPages.includes(1)}
-                      onChange={() => togglePage(1)}
-                    />
-                    Print Image
-                  </label>
-                </>
-              )}
-            </section>
-          </>
+            <p className="hint">
+              Pages selected for printing: {pageCount}
+            </p>
+          </section>
         )}
 
         <section className="panel">
-          <h2>03 <span>Print settings</span></h2>
+          <h2>04 <span>Print settings</span></h2>
 
           <div className="grid">
             <label>
@@ -596,7 +679,7 @@ export default function App() {
         </section>
 
         <section className="panel">
-          <h2>04 <span>Order summary</span></h2>
+          <h2>05 <span>Order summary</span></h2>
 
           <div className="grid">
             <div>
@@ -658,7 +741,7 @@ export default function App() {
               busy ||
               previewLoading ||
               !file ||
-              selectedPages.length === 0
+              pageCount === 0
             }
           >
             {busy ? "Please wait…" : "Place Order →"}
