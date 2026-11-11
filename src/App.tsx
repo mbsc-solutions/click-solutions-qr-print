@@ -1,9 +1,16 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as pdfjsLib from "pdfjs-dist";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 
 type PrintType = "bw" | "colour";
 type PaperSize = "A4" | "A3";
 type PrintSide = "single" | "double";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 const SUPABASE_URL =
   "https://uurjgzqmiwxqkwyvkheu.supabase.co";
@@ -26,14 +33,21 @@ const money = (n: number) =>
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
+  const [pdfDocument, setPdfDocument] =
+    useState<PDFDocumentProxy | null>(null);
+
   const [paper, setPaper] = useState<PaperSize>("A4");
   const [type, setType] = useState<PrintType>("bw");
   const [side, setSide] = useState<PrintSide>("single");
   const [copies, setCopies] = useState("1");
   const [pages, setPages] = useState("1");
+
   const [busy, setBusy] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
+
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const pageCount = Math.min(500, Math.max(1, Number(pages) || 1));
   const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
@@ -44,13 +58,81 @@ export default function App() {
       : type === "bw" ? 6 : 20;
 
   const total = useMemo(
-    () => pageCount * copyCount * rate * (side === "double" ? 2 : 1),
+    () =>
+      pageCount *
+      copyCount *
+      rate *
+      (side === "double" ? 2 : 1),
     [pageCount, copyCount, rate, side]
   );
 
-  function choose(f: File | null) {
+  const imagePreviewUrl = useMemo(() => {
+    if (file && file.type.startsWith("image/")) {
+      return URL.createObjectURL(file);
+    }
+    return "";
+  }, [file]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
+
+  // Render first PDF page in preview
+  useEffect(() => {
+    if (!pdfDocument || !canvasRef.current) return;
+
+    let cancelled = false;
+    let renderTask: { cancel: () => void } | null = null;
+
+    async function renderPreview() {
+      try {
+        const page = await pdfDocument!.getPage(1);
+
+        if (cancelled) return;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const context = canvas.getContext("2d");
+        if (!context) return;
+
+        const viewport = page.getViewport({ scale: 1.3 });
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        renderTask = page.render({
+          canvas,
+          canvasContext: context,
+          viewport,
+        });
+
+        await (renderTask as any).promise;
+      } catch {
+        if (!cancelled) {
+          setMessage("PDF preview could not be displayed.");
+        }
+      }
+    }
+
+    renderPreview();
+
+    return () => {
+      cancelled = true;
+      renderTask?.cancel();
+    };
+  }, [pdfDocument]);
+
+  // Select and read file
+  async function choose(f: File | null) {
     setMessage("");
     setOrderNumber("");
+    setPdfDocument(null);
+    setPages("1");
 
     if (!f) {
       setFile(null);
@@ -76,7 +158,39 @@ export default function App() {
     }
 
     setFile(f);
-    setMessage("File selected successfully.");
+
+    if (f.type === "application/pdf") {
+      setPreviewLoading(true);
+      setMessage("Reading PDF pages...");
+
+      try {
+        const loadingTask = pdfjsLib.getDocument({
+          data: await f.arrayBuffer(),
+        });
+
+        const pdf = await loadingTask.promise;
+
+        if (pdf.numPages > 500) {
+          await pdf.destroy();
+          setFile(null);
+          setMessage("Maximum 500 PDF pages are allowed.");
+          return;
+        }
+
+        setPdfDocument(pdf);
+        setPages(String(pdf.numPages));
+        setMessage("PDF loaded successfully.");
+      } catch {
+        setFile(null);
+        setPdfDocument(null);
+        setMessage("Unable to read this PDF. Please try another PDF.");
+      } finally {
+        setPreviewLoading(false);
+      }
+    } else {
+      setPages("1");
+      setMessage("Image selected successfully.");
+    }
   }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
@@ -89,10 +203,15 @@ export default function App() {
       return;
     }
 
+    if (previewLoading) {
+      setMessage("Please wait until the preview is ready.");
+      return;
+    }
+
     setBusy(true);
 
     try {
-      // Step 1: Upload file
+      // Step 1: Upload document
       const formData = new FormData();
       formData.append("file", file);
 
@@ -147,6 +266,8 @@ export default function App() {
 
       setMessage("Order saved successfully!");
       setFile(null);
+      setPdfDocument(null);
+      setPages("1");
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -177,8 +298,8 @@ export default function App() {
             <em>printed with ease.</em>
           </h1>
           <p>
-            Upload your file, choose print settings and pay at our shop.
-            Collect your ready prints.
+            Upload your file, preview your document,
+            choose print settings and collect your prints.
           </p>
         </div>
         <div className="heroIcon">▤</div>
@@ -187,9 +308,12 @@ export default function App() {
       <form onSubmit={submit}>
         <section className="panel">
           <h2>01 <span>Upload document</span></h2>
+
           <label className="upload">
             <b>＋</b>
-            <strong>{file ? file.name : "Choose PDF / JPG / PNG"}</strong>
+            <strong>
+              {file ? file.name : "Choose PDF / JPG / PNG"}
+            </strong>
             <small>Maximum file size: 20 MB</small>
             <input
               type="file"
@@ -201,8 +325,70 @@ export default function App() {
           </label>
         </section>
 
+        {file && (
+          <section className="panel">
+            <h2>02 <span>Document preview</span></h2>
+
+            {previewLoading && (
+              <p>Reading document pages...</p>
+            )}
+
+            {pdfDocument && (
+              <>
+                <div
+                  style={{
+                    background: "#f1f1f1",
+                    padding: "12px",
+                    borderRadius: "10px",
+                    textAlign: "center",
+                    overflow: "auto",
+                  }}
+                >
+                  <canvas
+                    ref={canvasRef}
+                    style={{
+                      maxWidth: "100%",
+                      height: "auto",
+                      background: "white",
+                    }}
+                  />
+                </div>
+                <p className="hint">
+                  Preview: Page 1 of {pdfDocument.numPages}
+                </p>
+              </>
+            )}
+
+            {imagePreviewUrl && (
+              <div
+                style={{
+                  background: "#f1f1f1",
+                  padding: "12px",
+                  borderRadius: "10px",
+                  textAlign: "center",
+                }}
+              >
+                <img
+                  src={imagePreviewUrl}
+                  alt="Uploaded document preview"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "450px",
+                    objectFit: "contain",
+                  }}
+                />
+              </div>
+            )}
+
+            <p className="hint">
+              Total document pages detected: <strong>{pageCount}</strong>
+            </p>
+          </section>
+        )}
+
         <section className="panel">
-          <h2>02 <span>Print settings</span></h2>
+          <h2>03 <span>Print settings</span></h2>
+
           <div className="grid">
             <label>
               Paper size
@@ -244,24 +430,6 @@ export default function App() {
             </label>
 
             <label>
-              Pages in document
-              <input
-                type="number"
-                min="1"
-                max="500"
-                value={pages}
-                onChange={(e) => setPages(e.target.value)}
-                onBlur={() => {
-                  const n = Math.min(
-                    500,
-                    Math.max(1, Number(pages) || 1)
-                  );
-                  setPages(String(n));
-                }}
-              />
-            </label>
-
-            <label>
               Number of copies
               <input
                 type="number"
@@ -281,9 +449,53 @@ export default function App() {
           </div>
 
           <p className="hint">
+            Pages are detected automatically from PDF.
+            Images count as 1 page.
+          </p>
+
+          <p className="hint">
             A4 B&W ₹3 per side · A4 Colour ₹10 per side.
             A3 B&W ₹6 per side · A3 Colour ₹20 per side.
             Both sides are charged for two printed sides.
+          </p>
+        </section>
+
+        <section className="panel">
+          <h2>04 <span>Order summary</span></h2>
+
+          <div className="grid">
+            <div>
+              <small>Document pages</small>
+              <strong>{pageCount}</strong>
+            </div>
+            <div>
+              <small>Copies</small>
+              <strong>{copyCount}</strong>
+            </div>
+            <div>
+              <small>Paper</small>
+              <strong>{paper}</strong>
+            </div>
+            <div>
+              <small>Print type</small>
+              <strong>
+                {type === "bw" ? "Black & White" : "Colour"}
+              </strong>
+            </div>
+            <div>
+              <small>Print sides</small>
+              <strong>
+                {side === "single" ? "Single side" : "Both sides"}
+              </strong>
+            </div>
+            <div>
+              <small>Rate per side</small>
+              <strong>{money(rate)}</strong>
+            </div>
+          </div>
+
+          <p className="hint">
+            Total chargeable sides: {pageCount * copyCount * (side === "double" ? 2 : 1)}
           </p>
         </section>
 
@@ -293,7 +505,11 @@ export default function App() {
             <strong>{money(total)}</strong>
             <small>Shop pickup · Payment at shop</small>
           </div>
-          <button type="submit" disabled={busy}>
+
+          <button
+            type="submit"
+            disabled={busy || previewLoading || !file}
+          >
             {busy ? "Please wait…" : "Place Order →"}
           </button>
         </section>
