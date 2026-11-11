@@ -732,7 +732,7 @@ export default function App() {
           <div>
             <small>ESTIMATED TOTAL</small>
             <strong>{money(total)}</strong>
-            <small>Shop pickup · Payment at shop</small>
+            <small>Shop pickup · Cash Payment at Shop</small>
           </div>
 
           <button
