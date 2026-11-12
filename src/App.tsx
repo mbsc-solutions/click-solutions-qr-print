@@ -7,6 +7,7 @@ type PrintType = "bw" | "colour";
 type PaperSize = "A4" | "A3";
 type PrintSide = "single" | "double";
 type PageMode = "all" | "custom";
+type PaymentMethod = "online" | "cash";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -136,6 +137,10 @@ export default function App() {
   const [side, setSide] = useState<PrintSide>("single");
   const [copies, setCopies] = useState("1");
 
+  // Payment method
+  const [paymentMethod, setPaymentMethod] =
+    useState<PaymentMethod>("online");
+
   const [busy, setBusy] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -143,11 +148,10 @@ export default function App() {
 
   const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
 
-  // Calculate selected pages from All Pages or Custom Range
+  // Calculate selected pages
   const selectedPages = useMemo(() => {
     if (!file) return [];
 
-    // Images have only one printable page
     if (file.type.startsWith("image/")) {
       return [1];
     }
@@ -162,8 +166,6 @@ export default function App() {
     }
 
     const value = customRange.trim();
-
-    // Accept one page number or one range such as 1-4
     const match = value.match(/^(\d+)\s*-\s*(\d+)$/);
 
     if (!match) return [];
@@ -345,6 +347,7 @@ export default function App() {
           total_pages: pageCount,
           selected_pages: selectedPages,
           total_amount: total,
+          payment_method: paymentMethod,
         }),
       });
 
@@ -728,11 +731,79 @@ export default function App() {
           </p>
         </section>
 
+        <section className="panel">
+          <h2>06 <span>Payment Method</span></h2>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "15px",
+              border: paymentMethod === "online"
+                ? "2px solid #2563eb"
+                : "1px solid #ddd",
+              borderRadius: "9px",
+              marginBottom: "10px",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="online"
+              checked={paymentMethod === "online"}
+              onChange={() => setPaymentMethod("online")}
+            />
+            <span>
+              <strong>Online Payment</strong>
+              <small style={{ display: "block" }}>
+                PhonePe / UPI
+              </small>
+            </span>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "12px",
+              padding: "15px",
+              border: paymentMethod === "cash"
+                ? "2px solid #2563eb"
+                : "1px solid #ddd",
+              borderRadius: "9px",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="radio"
+              name="paymentMethod"
+              value="cash"
+              checked={paymentMethod === "cash"}
+              onChange={() => setPaymentMethod("cash")}
+            />
+            <span>
+              <strong>Cash Payment</strong>
+              <small style={{ display: "block" }}>
+                Pay at Shop
+              </small>
+            </span>
+          </label>
+
+          <p className="hint" style={{ marginTop: "12px" }}>
+            Payment will be verified by the shop.
+            Your order will remain pending until payment is confirmed.
+          </p>
+        </section>
+
         <section className="total">
           <div>
             <small>ESTIMATED TOTAL</small>
             <strong>{money(total)}</strong>
-            <small>Shop pickup · Cash Payment at Shop</small>
+            <small>
+              Payment: {paymentMethod === "online" ? "PhonePe / UPI" : "Cash at Shop"}
+            </small>
           </div>
 
           <button
@@ -755,6 +826,11 @@ export default function App() {
             <strong>Your Order Number:</strong>
             <p>{orderNumber}</p>
             <small>Your order details have been saved.</small>
+            <p>
+              Payment Method:{" "}
+              {paymentMethod === "online" ? "PhonePe / UPI" : "Cash"}
+            </p>
+            <p>Payment Status: Pending</p>
           </div>
         )}
       </form>
@@ -765,8 +841,8 @@ export default function App() {
       </footer>
 
       <div className="setup">
-        File upload and order saving are activated.
-        Payment and automatic printing are not activated yet.
+        File upload, order saving and payment method selection are activated.
+        Payment verification and automatic printing require shop confirmation.
       </div>
     </main>
   );
