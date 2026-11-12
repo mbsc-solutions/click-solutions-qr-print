@@ -371,7 +371,7 @@ export default function App() {
   total_pages: pageCount,
   selected_pages: selectedPages,
   total_amount: total,
-  payment_method: "online",
+  payment_method: paymentMethod,
 }),
       });
 
