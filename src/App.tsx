@@ -1,5 +1,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 
@@ -47,11 +48,7 @@ function PdfPagePreview({
 
   useEffect(() => {
     let cancelled = false;
-    let renderTask: ReturnType<
-      PDFDocumentProxy["getPage"]
-    > extends Promise<infer P>
-      ? ReturnType<P["render"]> | null
-      : null = null;
+    let renderTask: any = null;
 
     async function renderPage() {
       try {
@@ -77,7 +74,9 @@ function PdfPagePreview({
 
         await renderTask.promise;
 
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       } catch {
         if (!cancelled) {
           setError(true);
@@ -128,6 +127,7 @@ function PdfPagePreview({
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
+
   const [pdfDocument, setPdfDocument] =
     useState<PDFDocumentProxy | null>(null);
 
@@ -149,7 +149,10 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
 
-  const copyCount = Math.min(100, Math.max(1, Number(copies) || 1));
+  const copyCount = Math.min(
+    100,
+    Math.max(1, Number(copies) || 1)
+  );
 
   // Calculate selected pages
   const selectedPages = useMemo(() => {
@@ -194,6 +197,7 @@ export default function App() {
 
   const pageCount = selectedPages.length;
 
+  // Printing price
   const rate =
     paper === "A4"
       ? type === "bw" ? 3 : 10
@@ -208,10 +212,12 @@ export default function App() {
     [pageCount, copyCount, rate, side]
   );
 
+  // Image preview URL
   const imagePreviewUrl = useMemo(() => {
     if (file && file.type.startsWith("image/")) {
       return URL.createObjectURL(file);
     }
+
     return "";
   }, [file]);
 
@@ -223,6 +229,7 @@ export default function App() {
     };
   }, [imagePreviewUrl]);
 
+  // Choose file
   async function choose(f: File | null) {
     setMessage("");
     setOrderNumber("");
@@ -279,7 +286,9 @@ export default function App() {
       } catch {
         setFile(null);
         setPdfDocument(null);
-        setMessage("Unable to read this PDF. Please try another PDF.");
+        setMessage(
+          "Unable to read this PDF. Please try another PDF."
+        );
       } finally {
         setPreviewLoading(false);
       }
@@ -288,8 +297,10 @@ export default function App() {
     }
   }
 
-  async function submit(e: React.FormEvent<HTMLFormElement>) {
+  // Submit order
+  async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+
     setMessage("");
     setOrderNumber("");
 
@@ -338,7 +349,9 @@ export default function App() {
       }
 
       if (!uploadResult.path) {
-        throw new Error("File uploaded, but file path was not returned.");
+        throw new Error(
+          "File uploaded, but file path was not returned."
+        );
       }
 
       // STEP 2: Save print order
@@ -390,6 +403,7 @@ export default function App() {
       setPageMode("all");
       setCustomRange("");
       setCopies("1");
+
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -407,36 +421,45 @@ export default function App() {
         <div className="logo">
           CLICK <span>SOLUTIONS</span>
         </div>
+
         <div className="sub">QR PRINT & XEROX</div>
+
         <p>UPLOAD · PRINT · PAY · COLLECT</p>
       </header>
 
       <section className="hero">
         <div>
           <small>ONLINE PRINT ORDER</small>
+
           <h1>
             Your documents,
             <br />
             <em>printed with ease.</em>
           </h1>
+
           <p>
             Upload your file, preview your document,
             choose print settings and collect your prints.
           </p>
         </div>
+
         <div className="heroIcon">▤</div>
       </section>
 
       <form onSubmit={submit}>
+        {/* 01 Upload document */}
         <section className="panel">
           <h2>01 <span>Upload document</span></h2>
 
           <label className="upload">
             <b>＋</b>
+
             <strong>
               {file ? file.name : "Choose PDF / JPG / PNG"}
             </strong>
+
             <small>Maximum file size: 20 MB</small>
+
             <input
               type="file"
               accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
@@ -447,6 +470,7 @@ export default function App() {
           </label>
         </section>
 
+        {/* 02 Document preview */}
         {file && (
           <section className="panel">
             <h2>02 <span>Document preview</span></h2>
@@ -472,14 +496,20 @@ export default function App() {
                 >
                   <div>
                     <strong>PDF Preview</strong>
-                    <p className="hint" style={{ margin: "5px 0 0" }}>
+
+                    <p
+                      className="hint"
+                      style={{ margin: "5px 0 0" }}
+                    >
                       Total pages: {pdfDocument.numPages}
                     </p>
                   </div>
 
                   <button
                     type="button"
-                    aria-label={previewOpen ? "Close preview" : "Open preview"}
+                    aria-label={
+                      previewOpen ? "Close preview" : "Open preview"
+                    }
                     onClick={(e) => {
                       e.stopPropagation();
                       setPreviewOpen(!previewOpen);
@@ -534,6 +564,7 @@ export default function App() {
           </section>
         )}
 
+        {/* 03 Select pages */}
         {file && (
           <section className="panel">
             <h2>03 <span>Select printer pages</span></h2>
@@ -557,6 +588,7 @@ export default function App() {
                     checked={pageMode === "all"}
                     onChange={() => setPageMode("all")}
                   />
+
                   <strong>All Pages</strong>
                 </label>
 
@@ -576,6 +608,7 @@ export default function App() {
                     checked={pageMode === "custom"}
                     onChange={() => setPageMode("custom")}
                   />
+
                   <strong>Custom Pages</strong>
                 </label>
 
@@ -583,6 +616,7 @@ export default function App() {
                   <div style={{ marginTop: "15px" }}>
                     <label>
                       Enter page range
+
                       <input
                         type="text"
                         value={customRange}
@@ -604,15 +638,18 @@ export default function App() {
                       Example: 1-2, 1-4, 4-8
                     </p>
 
-                    {customRange.trim() !== "" && pageCount === 0 && (
-                      <p style={{ color: "red" }}>
-                        Invalid range. Enter pages between 1 and {pdfDocument.numPages}.
-                      </p>
-                    )}
+                    {customRange.trim() !== "" &&
+                      pageCount === 0 && (
+                        <p style={{ color: "red" }}>
+                          Invalid range. Enter pages between 1 and{" "}
+                          {pdfDocument.numPages}.
+                        </p>
+                      )}
 
                     {pageCount > 0 && (
                       <p className="hint">
-                        Selected pages: {selectedPages[0]}-{selectedPages[selectedPages.length - 1]}
+                        Selected pages: {selectedPages[0]}-
+                        {selectedPages[selectedPages.length - 1]}
                       </p>
                     )}
                   </div>
@@ -621,7 +658,9 @@ export default function App() {
             )}
 
             {imagePreviewUrl && (
-              <p className="hint">Image document: 1 printable page.</p>
+              <p className="hint">
+                Image document: 1 printable page.
+              </p>
             )}
 
             <p className="hint">
@@ -630,12 +669,14 @@ export default function App() {
           </section>
         )}
 
+        {/* 04 Print settings */}
         <section className="panel">
           <h2>04 <span>Print settings</span></h2>
 
           <div className="grid">
             <label>
               Paper size
+
               <select
                 value={paper}
                 onChange={(e) =>
@@ -649,6 +690,7 @@ export default function App() {
 
             <label>
               Print colour
+
               <select
                 value={type}
                 onChange={(e) =>
@@ -662,6 +704,7 @@ export default function App() {
 
             <label>
               Print sides
+
               <select
                 value={side}
                 onChange={(e) =>
@@ -675,6 +718,7 @@ export default function App() {
 
             <label>
               Number of copies
+
               <input
                 type="number"
                 min="1"
@@ -686,6 +730,7 @@ export default function App() {
                     100,
                     Math.max(1, Number(copies) || 1)
                   );
+
                   setCopies(String(n));
                 }}
               />
@@ -699,6 +744,7 @@ export default function App() {
           </p>
         </section>
 
+        {/* 05 Order summary */}
         <section className="panel">
           <h2>05 <span>Order summary</span></h2>
 
@@ -745,10 +791,13 @@ export default function App() {
 
           <p className="hint">
             Total chargeable sides:{" "}
-            {pageCount * copyCount * (side === "double" ? 2 : 1)}
+            {pageCount *
+              copyCount *
+              (side === "double" ? 2 : 1)}
           </p>
         </section>
 
+        {/* 06 Payment method */}
         <section className="panel">
           <h2>06 <span>Payment Method</span></h2>
 
@@ -758,9 +807,10 @@ export default function App() {
               alignItems: "center",
               gap: "12px",
               padding: "15px",
-              border: paymentMethod === "online"
-                ? "2px solid #2563eb"
-                : "1px solid #ddd",
+              border:
+                paymentMethod === "online"
+                  ? "2px solid #2563eb"
+                  : "1px solid #ddd",
               borderRadius: "9px",
               marginBottom: "10px",
               cursor: "pointer",
@@ -773,8 +823,10 @@ export default function App() {
               checked={paymentMethod === "online"}
               onChange={() => setPaymentMethod("online")}
             />
+
             <span>
               <strong>Online Payment</strong>
+
               <small style={{ display: "block" }}>
                 PhonePe / UPI
               </small>
@@ -787,9 +839,10 @@ export default function App() {
               alignItems: "center",
               gap: "12px",
               padding: "15px",
-              border: paymentMethod === "cash"
-                ? "2px solid #2563eb"
-                : "1px solid #ddd",
+              border:
+                paymentMethod === "cash"
+                  ? "2px solid #2563eb"
+                  : "1px solid #ddd",
               borderRadius: "9px",
               cursor: "pointer",
             }}
@@ -801,8 +854,10 @@ export default function App() {
               checked={paymentMethod === "cash"}
               onChange={() => setPaymentMethod("cash")}
             />
+
             <span>
               <strong>Cash Payment</strong>
+
               <small style={{ display: "block" }}>
                 Pay at Shop
               </small>
@@ -815,12 +870,18 @@ export default function App() {
           </p>
         </section>
 
+        {/* Total and place order */}
         <section className="total">
           <div>
             <small>ESTIMATED TOTAL</small>
+
             <strong>{money(total)}</strong>
+
             <small>
-              Payment: {paymentMethod === "online" ? "PhonePe / UPI" : "Cash at Shop"}
+              Payment:{" "}
+              {paymentMethod === "online"
+                ? "PhonePe / UPI"
+                : "Cash at Shop"}
             </small>
           </div>
 
@@ -837,17 +898,27 @@ export default function App() {
           </button>
         </section>
 
-        {message && <div className="notice">{message}</div>}
+        {message && (
+          <div className="notice">
+            {message}
+          </div>
+        )}
 
         {orderNumber && (
           <div className="notice">
             <strong>Your Order Number:</strong>
+
             <p>{orderNumber}</p>
+
             <small>Your order details have been saved.</small>
+
             <p>
               Payment Method:{" "}
-              {paymentMethod === "online" ? "PhonePe / UPI" : "Cash"}
+              {paymentMethod === "online"
+                ? "PhonePe / UPI"
+                : "Cash"}
             </p>
+
             <p>Payment Status: Pending</p>
           </div>
         )}
