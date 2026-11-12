@@ -327,8 +327,12 @@ export default function App() {
 
       if (!uploadResponse.ok || !uploadResult.success) {
         throw new Error(
-          uploadResult.error || "File upload failed."
-        );
+  orderResult.invalid_fields
+    ? `${orderResult.error}: ${orderResult.invalid_fields.join(", ")}`
+    : orderResult.details
+      ? `${orderResult.error}: ${orderResult.details}`
+      : orderResult.error || "Order could not be saved."
+);
       }
 
       const orderResponse = await fetch(ORDER_URL, {
