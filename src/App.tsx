@@ -362,17 +362,17 @@ export default function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          file_path: uploadResult.path,
-          file_name: file.name,
-          paper_size: paper,
-          print_type: type,
-          print_side: side,
-          copies: copyCount,
-          total_pages: pageCount,
-          selected_pages: selectedPages,
-          total_amount: total,
-          payment_method: paymentMethod,
-        }),
+  file_path: uploadResult.path,
+  file_name: file.name,
+  paper_size: paper,
+  print_type: type,
+  print_side: side,
+  copies: copyCount,
+  total_pages: pageCount,
+  selected_pages: selectedPages,
+  total_amount: total,
+  payment_method: "online",
+}),
       });
 
       const orderResult = await orderResponse.json();
