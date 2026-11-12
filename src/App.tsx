@@ -47,7 +47,11 @@ function PdfPagePreview({
 
   useEffect(() => {
     let cancelled = false;
-    let renderTask: any = null;
+    let renderTask: ReturnType<
+      PDFDocumentProxy["getPage"]
+    > extends Promise<infer P>
+      ? ReturnType<P["render"]> | null
+      : null = null;
 
     async function renderPage() {
       try {
@@ -137,7 +141,6 @@ export default function App() {
   const [side, setSide] = useState<PrintSide>("single");
   const [copies, setCopies] = useState("1");
 
-  // Payment method
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("online");
 
@@ -312,6 +315,7 @@ export default function App() {
     setBusy(true);
 
     try {
+      // STEP 1: Upload document
       const formData = new FormData();
       formData.append("file", file);
 
@@ -327,14 +331,17 @@ export default function App() {
 
       if (!uploadResponse.ok || !uploadResult.success) {
         throw new Error(
-  orderResult.invalid_fields
-    ? `${orderResult.error}: ${orderResult.invalid_fields.join(", ")}`
-    : orderResult.details
-      ? `${orderResult.error}: ${orderResult.details}`
-      : orderResult.error || "Order could not be saved."
-);
+          uploadResult.error ||
+          uploadResult.message ||
+          "File upload failed. Please try again."
+        );
       }
 
+      if (!uploadResult.path) {
+        throw new Error("File uploaded, but file path was not returned.");
+      }
+
+      // STEP 2: Save print order
       const orderResponse = await fetch(ORDER_URL, {
         method: "POST",
         headers: {
@@ -358,15 +365,21 @@ export default function App() {
       const orderResult = await orderResponse.json();
 
       if (!orderResponse.ok || !orderResult.success) {
-        throw new Error(
-          orderResult.error || "Order could not be saved."
-        );
+        const errorMessage = orderResult.invalid_fields
+          ? `${orderResult.error}: ${orderResult.invalid_fields.join(", ")}`
+          : orderResult.details
+            ? `${orderResult.error}: ${orderResult.details}`
+            : orderResult.error || "Order could not be saved.";
+
+        throw new Error(errorMessage);
       }
 
       setOrderNumber(
-        orderResult.order?.order_number ||
-        orderResult.order?.id ||
-        "Saved"
+        String(
+          orderResult.order?.order_number ||
+          orderResult.order?.id ||
+          "Saved"
+        )
       );
 
       setMessage("Order saved successfully!");
@@ -376,6 +389,7 @@ export default function App() {
       setPreviewOpen(false);
       setPageMode("all");
       setCustomRange("");
+      setCopies("1");
     } catch (error) {
       setMessage(
         error instanceof Error
