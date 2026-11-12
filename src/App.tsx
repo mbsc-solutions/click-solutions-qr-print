@@ -26,7 +26,7 @@ const UPLOAD_URL =
 
 const ORDER_URL =
   `${SUPABASE_URL}/functions/v1/create-print-order`;
-
+console.log("ACTIVE APP VERSION: PAYMENT METHOD FIX");
 const money = (n: number) =>
   new Intl.NumberFormat("en-IN", {
     style: "currency",
