@@ -378,11 +378,7 @@ export default function App() {
       const orderResult = await orderResponse.json();
 
       if (!orderResponse.ok || !orderResult.success) {
-        const errorMessage = orderResult.invalid_fields
-          ? `${orderResult.error}: ${orderResult.invalid_fields.join(", ")}`
-          : orderResult.details
-            ? `${orderResult.error}: ${orderResult.details}`
-            : orderResult.error || "Order could not be saved.";
+       const errorMessage = JSON.stringify(orderResult, null, 2);
 
         throw new Error(errorMessage);
       }
