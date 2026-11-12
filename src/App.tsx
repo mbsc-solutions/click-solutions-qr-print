@@ -361,7 +361,7 @@ export default function App() {
           apikey: SUPABASE_PUBLISHABLE_KEY,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
+       body: JSON.stringify({
   file_path: uploadResult.path,
   file_name: file.name,
   paper_size: paper,
